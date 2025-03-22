@@ -80,13 +80,13 @@ if ($sinhVienID && $accessLevel >= 1 && $accessLevel <= 4) {
         
         // Lấy điểm các môn học của sinh viên trong học kỳ này
         $stmtDiem = $conn->prepare(
-            "SELECT bd.*, mh.Ten as TenMonHoc, mh.SoTC 
+            "SELECT bd.*, mh.TenMonHoc as TenMonHoc, mh.SoTC 
             FROM bangdiem bd
             INNER JOIN monhoc mh ON bd.IDMonHoc = mh.ID
             WHERE bd.IDSinhVien = ?
               AND mh.IDHocKy = ?
               AND mh.IDNamHoc = ?
-            ORDER BY mh.Ten"
+            ORDER BY mh.TenMonHoc"
         );
         $stmtDiem->execute([$sinhVienID, $maHK, $maNH]);
         

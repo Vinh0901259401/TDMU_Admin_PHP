@@ -111,7 +111,7 @@
         <li class="nav-item">
             <a class="nav-link" href="/TDMU_website/Areas/Admin/Views/Article/Index.php">
                 <i class="fab fa-telegram-plane"></i>
-                <span>Bài viết</span>
+                <span>Quản lý bài viết</span>
             </a>
         </li>
         <li class="nav-item">
@@ -127,7 +127,7 @@
             </a>
         </li>
         <li class="nav-item">
-            <a class="nav-link" href="/TDMU_website/Forum/Index">
+            <a class="nav-link" href="/TDMU_website/Areas/Admin/Views/Forum/Index.php">
                 <i class="fas fa-comments"></i>
                 <span>Forums giải đáp</span>
             </a>
@@ -135,7 +135,13 @@
         <li class="nav-item">
             <a class="nav-link" href="/TDMU_website/Areas/Admin/Views/Notify/Index.php">
                 <i class="fas fa-bell"></i>
-                <span>Thông báo</span>
+                <span>Quản lý thông báo</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/TDMU_website/Areas/Admin/Views/Subject/Index.php">
+                <i class="fas fa-book"></i>
+                <span>Quản lý môn học</span>
             </a>
         </li>
         <li class="nav-item">
