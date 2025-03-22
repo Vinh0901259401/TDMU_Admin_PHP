@@ -115,7 +115,7 @@
             </a>
         </li>
         <li class="nav-item">
-            <a class="nav-link" href="/TDMU_website/Class/Index">
+            <a class="nav-link" href="/TDMU_website/Areas/Admin/Views/Class/Index.php">
                 <i class="fas fa-chalkboard-teacher"></i>
                 <span>Quản lý lớp học</span>
             </a>
@@ -133,7 +133,7 @@
             </a>
         </li>
         <li class="nav-item">
-            <a class="nav-link" href="/TDMU_website/Notify/Index">
+            <a class="nav-link" href="/TDMU_website/Areas/Admin/Views/Notify/Index.php">
                 <i class="fas fa-bell"></i>
                 <span>Thông báo</span>
             </a>

@@ -1,4 +1,5 @@
 ﻿<?php
+// filepath: c:\xampp\htdocs\TDMU_website\Areas\Admin\Views\Article\Index.php
 // Kết nối database
 require_once("../Shared/connect.inc");
 
@@ -11,7 +12,7 @@ function truncate($string, $length) {
         return $string;
     } else {
         return substr($string, 0, $length) . '...';
-    }
+    }   
 }
 
 // Lấy thông tin người dùng từ session
@@ -30,18 +31,101 @@ if ($tk && isset($tk['IDQuyenTruyCap'])) {
             $accessLevel = $quyen['CapDo'];
         }
     } catch (PDOException $e) {
-        // Xử lý lỗi nếu cần
         error_log("Lỗi truy vấn quyền truy cập: " . $e->getMessage());
     }
 }
 
-// Xử lý tham số tìm kiếm từ URL
-$search = isset($_GET['search']) ? trim($_GET['search']) : '';
+// Xử lý tham số tìm kiếm và lọc từ URL
+$maTheLoai = isset($_GET['MaTheLoai']) ? $_GET['MaTheLoai'] : '';
+$search = isset($_GET['strSearch']) ? trim($_GET['strSearch']) : '';
 
 // Xử lý phân trang
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $recordsPerPage = 10; // Số bài viết trên mỗi trang
 $start = ($page - 1) * $recordsPerPage;
+
+// Lấy danh sách thể loại cho dropdown
+$dsTheLoai = [];
+try {
+    $stmt = $conn->query("SELECT ID, Ten FROM tlbaiviet ORDER BY Ten");
+    $dsTheLoai = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log("Lỗi truy vấn danh sách thể loại: " . $e->getMessage());
+}
+
+// Truy vấn danh sách bài viết với điều kiện lọc
+$dsBaiViet = [];
+$totalRecords = 0;
+try {
+    // Chuẩn bị câu truy vấn cơ sở và tham số
+    $whereConditions = [];
+    $params = [];
+    
+    // Lọc theo thể loại
+    if (!empty($maTheLoai)) {
+        $whereConditions[] = "bv.IDTLBaiViet = ?";
+        $params[] = $maTheLoai;
+    }
+    
+    // Tìm kiếm theo tiêu đề hoặc người đăng
+    if (!empty($search)) {
+        $whereConditions[] = "(bv.TieuDe LIKE ? OR tk.HoTen LIKE ?)";
+        $params[] = "%$search%";
+        $params[] = "%$search%";
+    }
+    
+    $whereClause = !empty($whereConditions) ? "WHERE " . implode(' AND ', $whereConditions) : "";
+    
+    // Đếm tổng số bản ghi cho phân trang
+    $countQuery = "
+        SELECT COUNT(bv.ID) as total 
+        FROM baiviet bv
+        LEFT JOIN tlbaiviet tlbv ON bv.IDTLBaiViet = tlbv.ID
+        LEFT JOIN taikhoan tk ON bv.IDNguoiDang = tk.ID
+        $whereClause
+    ";
+    
+    $countStmt = $conn->prepare($countQuery);
+    $countStmt->execute($params);
+    $totalRecords = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
+    
+    // Truy vấn danh sách bài viết với phân trang
+    $query = "
+        SELECT 
+            bv.ID, 
+            bv.TieuDe, 
+            bv.NoiDung, 
+            tlbv.Ten AS TenTheLoai,
+            bv.IDNguoiDang,
+            tk.HoTen AS NguoiDang,
+            bv.NgayTao
+        FROM baiviet bv
+        LEFT JOIN tlbaiviet tlbv ON bv.IDTLBaiViet = tlbv.ID
+        LEFT JOIN taikhoan tk ON bv.IDNguoiDang = tk.ID
+        $whereClause
+        ORDER BY bv.ID DESC
+        LIMIT ?, ?
+    ";
+    
+    $stmt = $conn->prepare($query);
+    
+    // Bind tất cả các tham số
+    $paramIndex = 1;
+    foreach ($params as $param) {
+        $stmt->bindValue($paramIndex++, $param);
+    }
+    
+    // Bind tham số phân trang
+    $stmt->bindValue($paramIndex++, $start, PDO::PARAM_INT);
+    $stmt->bindValue($paramIndex, $recordsPerPage, PDO::PARAM_INT);
+    
+    $stmt->execute();
+    $dsBaiViet = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+    error_log("Lỗi truy vấn danh sách bài viết: " . $e->getMessage());
+    $_SESSION['message'] = "Có lỗi xảy ra khi tải dữ liệu: " . $e->getMessage();
+    $_SESSION['messageType'] = "danger";
+}
 
 // Bắt đầu output buffer
 ob_start();
@@ -67,147 +151,119 @@ ob_start();
         <div class="row">
             <div class="col-12">
                 <div class="card shadow-sm my-4">
-                    <div class="card-header bg-primary text-white py-3">
-                        <h2 class="text-center mb-0">QUẢN LÝ THÔNG TIN BÀI VIẾT</h2>
+                <div class="card-header bg-primary text-white py-3">
+                        <div class="row align-items-center">
+                            <div class="col-md-6">
+                                <h4 class="mb-0"><i class="fas fa-users-class me-2"></i>DANH SÁCH BÀI VIẾT</h4>
+                            </div>
+                            <div class="col-md-6 text-md-end mt-2 mt-md-0">
+                                <?php if ($accessLevel <= 2): ?>
+                                    <a href="Create.php" class="btn btn-light">
+                                        <i class="fas fa-plus-circle me-1"></i> Thêm bài viết mới
+                                    </a>
+                                <?php endif; ?>
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="card-body">
-                        <!-- Thanh công cụ -->
-                        <div class="d-flex justify-content-between align-items-center mb-4">
-                            <a href="/TDMU_website/Areas/Admin/Views/Article/Create.php" class="btn btn-success">
-                                <i class="fas fa-plus me-2"></i>Thêm mới bài viết
-                            </a>
-                            
-                            <!-- Form tìm kiếm -->
-                            <div class="d-none d-md-block">
-                                <form class="d-flex" method="GET">
-                                    <input class="form-control me-2" type="search" placeholder="Tìm kiếm bài viết..." 
-                                           name="search" value="<?php echo htmlspecialchars($search); ?>">
-                                    <button class="btn btn-outline-primary" type="submit">Tìm</button>
+                        <!-- Thông báo -->
+                        <?php if (isset($_SESSION['message'])): ?>
+                            <div class="alert alert-<?php echo $_SESSION['messageType'] ?? 'info'; ?> alert-dismissible fade show" role="alert">
+                                <?php echo $_SESSION['message']; ?>
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                            <?php unset($_SESSION['message'], $_SESSION['messageType']); ?>
+                        <?php endif; ?>
+                        
+                        <!-- Bộ lọc và tìm kiếm - đã xóa nút thêm mới -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <form method="GET" action="" class="row g-3">
+                                    <div class="col-md-4">
+                                        <label for="MaTheLoai" class="form-label">Thể loại</label>
+                                        <select class="form-select" id="MaTheLoai" name="MaTheLoai" onchange="this.form.submit()">
+                                            <option value="">-- Tất cả thể loại --</option>
+                                            <?php foreach ($dsTheLoai as $theLoai): ?>
+                                            <option value="<?php echo $theLoai['ID']; ?>" <?php echo $theLoai['ID'] == $maTheLoai ? 'selected' : ''; ?>>
+                                                <?php echo htmlspecialchars($theLoai['Ten']); ?>
+                                            </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="strSearch" class="form-label">Tìm kiếm</label>
+                                        <div class="input-group">
+                                            <input type="text" class="form-control" id="strSearch" name="strSearch" 
+                                                placeholder="Tìm kiếm theo tiêu đề, người đăng..." 
+                                                value="<?php echo htmlspecialchars($search); ?>">
+                                            <button class="btn btn-outline-primary" type="submit">
+                                                <i class="fas fa-search"></i> Tìm
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <?php if (!empty($maTheLoai) || !empty($search)): ?>
+                                    <div class="col-md-2">
+                                        <label class="form-label d-block">&nbsp;</label>
+                                        <a href="Index.php" class="btn btn-outline-secondary w-100">
+                                            <i class="fas fa-sync"></i> Đặt lại
+                                        </a>
+                                    </div>
+                                    <?php endif; ?>
                                 </form>
                             </div>
                         </div>
                         
-                        <?php if (!empty($search)): ?>
-                            <div class="alert alert-info mb-4">
-                                <i class="fas fa-search me-2"></i>Kết quả tìm kiếm cho: <strong>"<?php echo htmlspecialchars($search); ?>"</strong>
-                            </div>
-                        <?php endif; ?>
-                        
                         <!-- Bảng dữ liệu -->
-                        <div class="table-responsive">
+                        <div class="table-responsive mt-3">
                             <table class="table table-bordered table-hover table-striped">
                                 <thead class="table-dark">
                                     <tr>
-                                        <th style="text-align:center; width:10%">Thể loại</th>
-                                        <th style="text-align:center; width:20%">Tiêu đề</th>
-                                        <th style="text-align:center; width:20%">Nội dung</th>
-                                        <th style="text-align:center; width:20%">Người đăng</th>
-                                        <th style="text-align:center; width:10%">Ngày cập nhật</th>
-                                        <th style="text-align:center; width:20%">Thao tác</th>
+                                        <th style="width: 15%">Thể loại</th>
+                                        <th style="width: 30%">Tiêu đề</th>
+                                        <th style="width: 20%">Người đăng</th>
+                                        <th style="width: 10%">Ngày đăng</th>
+                                        <th style="width: 25%" class="text-center">Thao tác</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                <?php
-                                    try {
-                                        // Chuẩn bị câu truy vấn cơ sở và tham số
-                                        $params = [];
-                                        $baseQuery = "
-                                            FROM 
-                                                baiviet bv
-                                                LEFT JOIN tlbaiviet tlbv ON bv.IDTLBaiViet = tlbv.ID
-                                                LEFT JOIN taikhoan tk ON bv.IDNguoiDang = tk.ID
-                                            WHERE 1=1";
-                                        
-                                        // Thêm điều kiện tìm kiếm nếu có
-                                        if (!empty($search)) {
-                                            $baseQuery .= " AND (bv.TieuDe LIKE ? OR bv.NoiDung LIKE ? OR tlbv.Ten LIKE ? OR tk.HoTen LIKE ?)";
-                                            $searchParam = "%{$search}%";
-                                            $params[] = $searchParam; // Tìm theo tiêu đề
-                                            $params[] = $searchParam; // Tìm theo nội dung
-                                            $params[] = $searchParam; // Tìm theo thể loại
-                                            $params[] = $searchParam; // Tìm theo người đăng
-                                        }
-                                        
-                                        // Đếm tổng số bản ghi cho phân trang
-                                        $countQuery = "SELECT COUNT(*) as total " . $baseQuery;
-                                        $countStmt = $conn->prepare($countQuery);
-                                        
-                                        // Bind tham số cho câu truy vấn đếm
-                                        if (!empty($search)) {
-                                            for ($i = 0; $i < count($params); $i++) {
-                                                $countStmt->bindValue($i + 1, $params[$i], PDO::PARAM_STR);
-                                            }
-                                        }
-                                        
-                                        $countStmt->execute();
-                                        $totalRecords = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
-                                        
-                                        // Truy vấn danh sách bài viết với phân trang
-                                        $query = "
-                                            SELECT 
-                                                bv.ID, 
-                                                bv.TieuDe, 
-                                                bv.NoiDung, 
-                                                tlbv.Ten AS TenTheLoai,
-                                                bv.IDNguoiDang,
-                                                tk.HoTen AS NguoiDang,
-                                                (SELECT MAX(bvncs.NgayChinhSua) 
-                                                FROM baiviet_nguoichinhsua bvncs 
-                                                WHERE bvncs.IDBaiViet = bv.ID) AS NgayChinhSua
-                                            " . $baseQuery . "
-                                            ORDER BY bv.ID DESC
-                                            LIMIT ?, ?
-                                            ";
-                                        
-                                        $stmt = $conn->prepare($query);
-                                        
-                                        // Bind tham số cho câu truy vấn chính
-                                        $paramIndex = 1;
-                                        
-                                        // Bind tham số tìm kiếm (nếu có)
-                                        if (!empty($search)) {
-                                            for ($i = 0; $i < count($params); $i++) {
-                                                $stmt->bindValue($paramIndex++, $params[$i], PDO::PARAM_STR);
-                                            }
-                                        }
-                                        
-                                        // Bind tham số phân trang
-                                        $stmt->bindValue($paramIndex++, $start, PDO::PARAM_INT);
-                                        $stmt->bindValue($paramIndex++, $recordsPerPage, PDO::PARAM_INT);
-                                        
-                                        $stmt->execute();
-                                        $articles = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                                        
-                                        if (count($articles) > 0) {
-                                            foreach ($articles as $article) {
-                                                echo "<tr>";
-                                                echo "<td>" . htmlspecialchars($article['TenTheLoai'] ?? '') . "</td>";
-                                                echo "<td>" . truncate(htmlspecialchars($article['TieuDe'] ?? ''), 50) . "</td>";
-                                                echo "<td>" . truncate(strip_tags($article['NoiDung'] ?? ''), 70) . "</td>";
-                                                echo "<td>" . htmlspecialchars($article['NguoiDang'] ?? '') . "</td>";
-                                                echo "<td>" . (isset($article['NgayChinhSua']) && $article['NgayChinhSua'] ? date('d/m/Y', strtotime($article['NgayChinhSua'])) : '') . "</td>";
-                                                echo "<td class='text-center'>";
-                                                echo "<div class='btn-group'>";
-                                                echo "<a href='/TDMU_website/Areas/Admin/Views/Article/Edit.php?MaBV=" . $article['ID'] . "' class='btn btn-warning btn-sm'>Sửa</a>";
-                                                echo "<a href='/TDMU_website/Areas/Admin/Views/Article/Details.php?MaBV=" . $article['ID'] . "' class='btn btn-primary btn-sm mx-1'>Chi tiết</a>";
-                                                echo "<a href='/TDMU_website/Areas/Admin/Views/Article/Delete.php?MaBV=" . $article['ID'] . "' class='btn btn-danger btn-sm' onclick=\"return confirm('Bạn có chắc muốn xóa bài viết này?');\">Xóa</a>";
-                                                echo "</div>";
-                                                echo "</td>";
-                                                echo "</tr>";
-                                            }
-                                        } else {
-                                            $colSpan = 6;
-                                            if (!empty($search)) {
-                                                echo "<tr><td colspan='{$colSpan}' class='text-center py-3'>Không tìm thấy bài viết nào với từ khóa <strong>\"{$search}\"</strong></td></tr>";
-                                            } else {
-                                                echo "<tr><td colspan='{$colSpan}' class='text-center py-3'>Không có bài viết nào</td></tr>";
-                                            }
-                                        }
-                                    } catch (PDOException $e) {
-                                        echo "<tr><td colspan='6' class='text-danger text-center py-3'>Lỗi truy vấn dữ liệu: " . $e->getMessage() . "</td></tr>";
-                                    }
-                                ?>
+                                <?php if (count($dsBaiViet) > 0): ?>
+                                    <?php foreach ($dsBaiViet as $baiViet): ?>
+                                    <tr>
+                                        <td><?php echo htmlspecialchars($baiViet['TenTheLoai'] ?? 'Chưa phân loại'); ?></td>
+                                        <td><?php echo truncate(htmlspecialchars($baiViet['TieuDe'] ?? ''), 50); ?></td>
+                                        <td><?php echo htmlspecialchars($baiViet['NguoiDang'] ?? 'Không xác định'); ?></td>
+                                        <td><?php echo isset($baiViet['NgayTao']) && $baiViet['NgayTao'] ? date('d/m/Y', strtotime($baiViet['NgayTao'])) : ''; ?></td>
+                                        <td class="text-center">
+                                            <div class="btn-group">
+                                                <a href="Edit.php?MaBV=<?php echo $baiViet['ID']; ?>" class="btn btn-warning btn-sm">
+                                                    <i class="fas fa-edit"></i> Sửa
+                                                </a>
+                                                <a href="Details.php?MaBV=<?php echo $baiViet['ID']; ?>" class="btn btn-primary btn-sm mx-1">
+                                                    <i class="fas fa-eye"></i> Chi tiết
+                                                </a>
+                                                <a href="Delete.php?MaBV=<?php echo $baiViet['ID']; ?>" class="btn btn-danger btn-sm" 
+                                                   onclick="return confirm('Bạn có chắc muốn xóa bài viết này?');">
+                                                    <i class="fas fa-trash"></i> Xóa
+                                                </a>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <tr>
+                                        <td colspan="5" class="text-center py-4">
+                                            <div class="alert alert-info mb-0">
+                                                <i class="fas fa-info-circle me-2"></i>
+                                                <?php if (!empty($maTheLoai) || !empty($search)): ?>
+                                                    Không tìm thấy bài viết nào phù hợp với điều kiện tìm kiếm
+                                                <?php else: ?>
+                                                    Chưa có bài viết nào trong hệ thống
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <?php endif; ?>
                                 </tbody>
                             </table>
                         </div>
@@ -216,21 +272,24 @@ ob_start();
                         <?php if ($totalRecords > 0): ?>
                         <div class="d-flex justify-content-between align-items-center mt-4">
                             <div class="text-muted">
-                                Hiển thị <?php echo count($articles); ?> / <?php echo $totalRecords; ?> bài viết
-                                <?php if(!empty($search)): ?>
-                                    <span class="text-primary">(Kết quả tìm kiếm)</span>
+                                Hiển thị <?php echo count($dsBaiViet); ?> / <?php echo $totalRecords; ?> bài viết
+                                <?php if(!empty($search) || !empty($maTheLoai)): ?>
+                                    <span class="text-primary">(Kết quả lọc)</span>
                                 <?php endif; ?>
-                                (Trang <?php echo $page; ?> / <?php echo ceil($totalRecords / $recordsPerPage); ?>)
                             </div>
+                            
                             <nav aria-label="Page navigation">
                                 <ul class="pagination mb-0">
                                     <?php
                                     $totalPages = ceil($totalRecords / $recordsPerPage);
                                     
-                                    // Xây dựng URL cơ bản cho phân trang, bao gồm tham số tìm kiếm
+                                    // Xây dựng URL cơ bản cho phân trang, bao gồm tham số lọc và tìm kiếm
                                     $basePageUrl = '?';
+                                    if (!empty($maTheLoai)) {
+                                        $basePageUrl .= 'MaTheLoai=' . urlencode($maTheLoai) . '&';
+                                    }
                                     if (!empty($search)) {
-                                        $basePageUrl .= 'search=' . urlencode($search) . '&';
+                                        $basePageUrl .= 'strSearch=' . urlencode($search) . '&';
                                     }
                                     
                                     // Previous button
@@ -241,12 +300,29 @@ ob_start();
                                     }
                                     
                                     // Page numbers
-                                    for ($i = max(1, $page - 2); $i <= min($page + 2, $totalPages); $i++) {
+                                    $startPage = max(1, $page - 2);
+                                    $endPage = min($startPage + 4, $totalPages);
+                                    
+                                    if ($startPage > 1) {
+                                        echo "<li class='page-item'><a class='page-link' href='{$basePageUrl}page=1'>1</a></li>";
+                                        if ($startPage > 2) {
+                                            echo "<li class='page-item disabled'><a class='page-link'>...</a></li>";
+                                        }
+                                    }
+                                    
+                                    for ($i = $startPage; $i <= $endPage; $i++) {
                                         if ($i == $page) {
                                             echo "<li class='page-item active'><a class='page-link'>" . $i . "</a></li>";
                                         } else {
                                             echo "<li class='page-item'><a class='page-link' href='{$basePageUrl}page=" . $i . "'>" . $i . "</a></li>";
                                         }
+                                    }
+                                    
+                                    if ($endPage < $totalPages) {
+                                        if ($endPage < $totalPages - 1) {
+                                            echo "<li class='page-item disabled'><a class='page-link'>...</a></li>";
+                                        }
+                                        echo "<li class='page-item'><a class='page-link' href='{$basePageUrl}page=" . $totalPages . "'>" . $totalPages . "</a></li>";
                                     }
                                     
                                     // Next button
@@ -265,73 +341,6 @@ ob_start();
             </div>
         </div>
     </div>
-
-    <style>
-        /* Tùy chỉnh style để bảng rộng hơn và dễ đọc */
-        .table-responsive {
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-        }
-        
-        .table {
-            width: 100%;
-            margin-bottom: 0;
-        }
-        
-        .table th, .table td {
-            vertical-align: middle;
-            padding: 0.75rem;
-        }
-        
-        .btn-group .btn {
-            border-radius: 0.25rem;
-        }
-        
-        .pagination {
-            margin-bottom: 0;
-        }
-        
-        .pagination .page-link {
-            color: #007bff;
-            background-color: #fff;
-            border: 1px solid #dee2e6;
-        }
-        
-        .pagination .page-item.active .page-link {
-            color: #fff;
-            background-color: #007bff;
-            border-color: #007bff;
-        }
-        
-        /* Responsive styling */
-        @media (max-width: 992px) {
-            .btn-group {
-                display: flex;
-                flex-direction: column;
-            }
-            
-            .btn-group .btn {
-                margin: 2px 0;
-                width: 100%;
-            }
-            
-            .btn-group .mx-1 {
-                margin-left: 0 !important;
-                margin-right: 0 !important;
-            }
-        }
-        
-        @media (max-width: 768px) {
-            .table th, .table td {
-                padding: 0.5rem;
-            }
-            
-            .btn-sm {
-                padding: 0.25rem 0.5rem;
-                font-size: 0.75rem;
-            }
-        }
-    </style>
 <?php endif; ?>
 
 <?php
