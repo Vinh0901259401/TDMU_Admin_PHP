@@ -134,6 +134,28 @@ function getDanhGiaDiem($diemHe4) {
     return '<span class="badge bg-danger">Không đạt</span>';
 }
 
+// Hàm đánh giá xếp loại dựa trên điểm hệ 10
+function getPhanLoaiDiem($diemTB10) {
+    if ($diemTB10 >= 9.0) return '<span class="badge bg-success">Xuất sắc</span>';
+    if ($diemTB10 >= 8.0) return '<span class="badge bg-primary">Giỏi</span>';
+    if ($diemTB10 >= 7.0) return '<span class="badge bg-info">Khá</span>';
+    if ($diemTB10 >= 5.0) return '<span class="badge bg-warning text-dark">Trung bình</span>';
+    return '<span class="badge bg-danger">Yếu</span>';
+}
+
+// Hàm chuyển đổi điểm hệ 4 sang hệ 10
+function getDiem10FromDiem4($diemHe4) {
+    if ($diemHe4 >= 4.0) return 10.0;
+    if ($diemHe4 >= 3.7) return 9.0;
+    if ($diemHe4 >= 3.5) return 8.5;
+    if ($diemHe4 >= 3.0) return 8.0;
+    if ($diemHe4 >= 2.5) return 7.0;
+    if ($diemHe4 >= 2.0) return 6.0;
+    if ($diemHe4 >= 1.5) return 5.5;
+    if ($diemHe4 >= 1.0) return 5.0;
+    return 4.0;
+}
+
 // Bắt đầu output buffer
 ob_start();
 ?>
@@ -432,15 +454,15 @@ ob_start();
                             <table class="table table-hover table-bordered">
                                 <thead class="table-light">
                                     <tr>
-                                        <th width="5%" class="text-center">STT</th>
-                                        <th width="35%">Tên môn học</th>
-                                        <th width="7%" class="text-center">Số TC</th>
-                                        <th width="8%" class="text-center">Chuyên cần</th>
-                                        <th width="8%" class="text-center">Kiểm tra</th>
-                                        <th width="8%" class="text-center">Thi</th>
-                                        <th width="8%" class="text-center">Tổng kết</th>
-                                        <th width="7%" class="text-center">Điểm chữ</th>
-                                        <th width="7%" class="text-center">Hệ 4</th>
+                                        <th width="3%" class="text-center">STT</th>
+                                        <th width="25%">Tên môn học</th>
+                                        <th width="5%" class="text-center">Mã MH</th>
+                                        <th width="5%" class="text-center">Số TC</th>
+                                        <th width="10%" class="text-center">Nhóm môn học</th>
+                                        <th width="5%" class="text-center">Điểm thi</th>
+                                        <th width="7%" class="text-center">Điểm TK (10)</th>
+                                        <th width="7%" class="text-center">Điểm TK (4)</th>
+                                        <th width="5%" class="text-center">Điểm TK (C)</th>
                                         <th width="7%" class="text-center">Kết quả</th>
                                     </tr>
                                 </thead>
@@ -459,23 +481,21 @@ ob_start();
                                     ?>
                                         <tr>
                                             <td class="text-center"><?php echo $stt++; ?></td>
-                                            <td><?php echo htmlspecialchars($diem['TenMonHoc']); ?>
-                                                <?php if (!empty($diem['MaNhom'])): ?>
-                                                    <span class="badge bg-light text-dark ms-1"><?php echo htmlspecialchars($diem['MaNhom']); ?></span>
-                                                <?php endif; ?>
-                                            </td>
+                                            <td><?php echo htmlspecialchars($diem['TenMonHoc']); ?></td>
+                                            <td class="text-center"><?php echo htmlspecialchars($diem['MaMonHoc']); ?></td>
                                             <td class="text-center"><?php echo $diem['SoTC']; ?></td>
-                                            <td class="text-center"><?php echo isset($diem['DiemChuyenCan']) && $diem['DiemChuyenCan'] !== null ? number_format($diem['DiemChuyenCan'], 1) : '<span class="text-muted">-</span>'; ?></td>
-                                            <td class="text-center"><?php echo isset($diem['DiemKiemTra']) && $diem['DiemKiemTra'] !== null ? number_format($diem['DiemKiemTra'], 1) : '<span class="text-muted">-</span>'; ?></td>
+                                            <td class="text-center">
+                                                <?php echo !empty($diem['MaNhom']) ? htmlspecialchars($diem['MaNhom']) : 'KTCN.CQ.01'; ?>
+                                            </td>
                                             <td class="text-center"><?php echo isset($diem['DiemThi']) && $diem['DiemThi'] !== null ? number_format($diem['DiemThi'], 1) : '<span class="text-muted">-</span>'; ?></td>
                                             <td class="text-center fw-bold">
                                                 <?php echo isset($diem['DiemTongKet']) && $diem['DiemTongKet'] !== null ? number_format($diem['DiemTongKet'], 1) : '<span class="text-muted">-</span>'; ?>
                                             </td>
                                             <td class="text-center">
-                                                <?php echo isset($diem['DiemChu']) && $diem['DiemChu'] !== null ? $diem['DiemChu'] : '<span class="text-muted">-</span>'; ?>
+                                                <?php echo isset($diem['DiemHe4']) && $diem['DiemHe4'] !== null ? number_format($diem['DiemHe4'], 2) : '<span class="text-muted">-</span>'; ?>
                                             </td>
                                             <td class="text-center">
-                                                <?php echo isset($diem['DiemHe4']) && $diem['DiemHe4'] !== null ? number_format($diem['DiemHe4'], 1) : '<span class="text-muted">-</span>'; ?>
+                                                <?php echo isset($diem['DiemChu']) && $diem['DiemChu'] !== null ? $diem['DiemChu'] : '<span class="text-muted">-</span>'; ?>
                                             </td>
                                             <td class="text-center">
                                                 <?php
@@ -501,35 +521,59 @@ ob_start();
                                 </tbody>
                                 <tfoot class="table-light">
                                     <tr>
-                                        <td colspan="2" class="fw-bold">Điểm trung bình học kỳ</td>
-                                        <td class="text-center fw-bold"><?php echo $tongTC; ?></td>
-                                        <td colspan="4"></td>
+                                        <td colspan="5" class="fw-bold">Điểm trung bình học kỳ</td>
+                                        <td></td>
                                         <td class="text-center fw-bold">
                                             <?php 
-                                            // Tính điểm trung bình hệ chữ
-                                            $diemTB = $tongTC > 0 ? $tongDiem / $tongTC : 0;
-                                            echo getDiemChu($diemTB);
+                                            // Tính điểm trung bình hệ 10
+                                            $diemTB10 = $tongTC > 0 ? array_sum(array_map(function($item) {
+                                                return $item['DiemTongKet'] * $item['SoTC']; 
+                                            }, $diemHocKy)) / $tongTC : 0;
+                                            echo number_format($diemTB10, 2); 
                                             ?>
                                         </td>
                                         <td class="text-center fw-bold">
-                                            <?php echo $tongTC > 0 ? number_format($diemTB, 2) : '-'; ?>
+                                            <?php 
+                                            // Tính điểm trung bình hệ 4
+                                            $diemTB = $tongTC > 0 ? $tongDiem / $tongTC : 0;
+                                            echo $tongTC > 0 ? number_format($diemTB, 2) : '-'; 
+                                            ?>
+                                        </td>
+                                        <td class="text-center fw-bold">
+                                            <?php echo $tongTC > 0 ? getDiemChu($diemTB) : '-'; ?>
                                         </td>
                                         <td class="text-center">
-                                            <?php
-                                            if ($tongTC > 0) {
-                                                if ($diemTB >= 1.0) {
-                                                    echo '<span class="badge bg-success">Đạt</span>';
-                                                } else {
-                                                    echo '<span class="badge bg-danger">Không đạt</span>';
-                                                }
-                                            } else {
-                                                echo '-';
-                                            }
-                                            ?>
+                                            <?php echo $tongTC > 0 ? getPhanLoaiDiem($diemTB10) : '-'; ?>
                                         </td>
                                     </tr>
                                 </tfoot>
                             </table>
+                        </div>
+                        <!-- Thêm sau bảng điểm, trước phần dự đoán (khoảng dòng 522) -->
+                        <div class="card mt-4">
+                            <div class="card-header bg-info text-white">
+                                <h5 class="mb-0"><i class="fas fa-chart-bar me-2"></i> Tổng kết học kỳ</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <ul class="list-group">
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span><i class="fas fa-calculator me-2 text-primary"></i> Điểm trung bình học kỳ hệ 10:</span>
+                                                <span class="badge bg-primary rounded-pill"><?php echo number_format($diemTB10, 2); ?></span>
+                                            </li>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span><i class="fas fa-check-circle me-2 text-success"></i> Số tín chỉ đạt học kỳ:</span>
+                                                <span class="badge bg-success rounded-pill"><?php echo $tongTC; ?></span>
+                                            </li>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span><i class="fas fa-award me-2 text-info"></i> Phân loại điểm trung bình HK:</span>
+                                                <?php echo getPhanLoaiDiem($diemTB10); ?>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                         <?php else: ?>
                             <div class="alert alert-info">

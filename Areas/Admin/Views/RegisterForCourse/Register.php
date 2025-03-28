@@ -136,6 +136,18 @@ try {
     
     $hasTrangThaiColumn = $stmtCheckColumn->rowCount() > 0;
     
+    // Thêm đoạn code này sau phần kiểm tra $hasTrangThaiColumn (khoảng dòng 106)
+    // Kiểm tra cột NgayDangKy trong bảng chitiet_dangkymonhoc
+    $stmtCheckColumn = $conn->prepare("
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() 
+        AND TABLE_NAME = 'chitiet_dangkymonhoc' 
+        AND COLUMN_NAME = 'NgayDangKy'
+    ");
+    $stmtCheckColumn->execute();
+    $hasChiTietDangKyNgayColumn = $stmtCheckColumn->rowCount() > 0;
+
     // Lấy danh sách nhóm môn học
     $stmtNhomMonHoc = $conn->prepare("
         SELECT nmh.*, tk.HoTen as TenGiangVien, ph.MaPhong, ph.TenPhong,
@@ -437,25 +449,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register']) && isset(
                 $nmsExists = $stmtCheckNMS->fetchColumn() > 0;
                 
                 if (!$nmsExists) {
-                    // Tạo ID mới cho nhommonhoc_sinhvien
-                    $stmtCountNMS = $conn->prepare("SELECT COUNT(*) FROM nhommonhoc_sinhvien");
-                    $stmtCountNMS->execute();
-                    $countNMS = $stmtCountNMS->fetchColumn();
-                    $nmsId = 'NMS' . str_pad($countNMS + 1, 10, '0', STR_PAD_LEFT);
-                    
                     // Kiểm tra lại cột TrangThai trước khi insert
                     if ($hasTrangThaiColumn) {
                         $stmtInsertNMS = $conn->prepare("
-                            INSERT INTO nhommonhoc_sinhvien (ID, IDNhomMonHoc, IDSinhVien, TrangThai, NgayDangKy)
-                            VALUES (?, ?, ?, 1, NOW())
+                            INSERT INTO nhommonhoc_sinhvien (IDNhomMonHoc, IDSinhVien, TrangThai, NgayDangKy)
+                            VALUES (?, ?, 1, NOW())
                         ");
-                        $stmtInsertNMS->execute([$nmsId, $nhomMonHocId, $tk['ID']]);
+                        $stmtInsertNMS->execute([$nhomMonHocId, $tk['ID']]);
                     } else {
                         $stmtInsertNMS = $conn->prepare("
-                            INSERT INTO nhommonhoc_sinhvien (ID, IDNhomMonHoc, IDSinhVien, NgayDangKy)
-                            VALUES (?, ?, ?, NOW())
+                            INSERT INTO nhommonhoc_sinhvien (IDNhomMonHoc, IDSinhVien, NgayDangKy)
+                            VALUES (?, ?, NOW())
                         ");
-                        $stmtInsertNMS->execute([$nmsId, $nhomMonHocId, $tk['ID']]);
+                        $stmtInsertNMS->execute([$nhomMonHocId, $tk['ID']]);
                     }
                 } else {
                     // Cập nhật trạng thái nếu đã tồn tại và có cột TrangThai
@@ -481,12 +487,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register']) && isset(
                     // Xử lý dữ liệu bảng điểm dựa trên trạng thái đã rớt hoặc đăng ký mới
                     if ($daRotMon) {
                         // Nếu đã rớt môn, cập nhật lần học mới
-                        // Tạo ID mới cho bảng điểm
-                        $stmtCountBD = $conn->prepare("SELECT COUNT(*) FROM bangdiem");
-                        $stmtCountBD->execute();
-                        $countBD = $stmtCountBD->fetchColumn();
-                        $bangDiemId = 'BD' . str_pad($countBD + 1, 10, '0', STR_PAD_LEFT);
-                        
                         // Lấy thông tin học kỳ, năm học từ đợt đăng ký
                         $stmtHocKyNamHoc = $conn->prepare("
                             SELECT IDHocKy, IDNamHoc 
@@ -505,27 +505,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register']) && isset(
                         $stmtGiangVien->execute([$nhomMonHocId]);
                         $idGiangVien = $stmtGiangVien->fetchColumn();
                         
-                        // Thêm bản ghi mới cho lần học lại
+                        // Thêm bản ghi mới cho lần học lại - không chỉ định ID để trigger tạo tự động
                         $stmtInsertBangDiem = $conn->prepare("
                             INSERT INTO bangdiem (
-                                ID, IDSinhVien, IDMonHoc, IDGiangVien, 
+                                IDSinhVien, IDMonHoc, IDGiangVien, IDNhomMonHoc,
                                 IDHocKy, IDNamHoc, DiemChuyenCan, DiemKiemTra, DiemThi,
                                 DiemTongKet, DiemChu, DiemHe4, KetQua, 
                                 LanHoc, GhiChu, NgayNhap
                             ) VALUES (
-                                ?, ?, ?, ?, 
-                                ?, ?, NULL, NULL, NULL, 
-                                NULL, NULL, NULL, 0, 
-                                ?, ?, NOW()
+                                ?, ?, ?, ?,
+                                ?, ?, NULL, NULL, 
+                                NULL, NULL, NULL, NULL, 
+                                0, ?, ?, NOW()
                             )
                         ");
                         
                         $ghiChu = "Đăng ký học lại lần " . ($lanHocHienTai - 1);
                         $stmtInsertBangDiem->execute([
-                            $bangDiemId,
                             $tk['ID'],
                             $monHoc['ID'],
                             $idGiangVien,
+                            $nhomMonHocId,
                             $hocKyNamHoc['IDHocKy'],
                             $hocKyNamHoc['IDNamHoc'],
                             $lanHocHienTai,
@@ -567,25 +567,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register']) && isset(
                             $stmtGiangVien->execute([$nhomMonHocId]);
                             $idGiangVien = $stmtGiangVien->fetchColumn();
                             
-                            // Thêm vào bảng điểm với các giá trị mặc định
+                            // Thêm vào bảng điểm với các giá trị mặc định - không chỉ định ID để trigger tạo tự động
                             $stmtInsertBangDiem = $conn->prepare("
                                 INSERT INTO bangdiem (
-                                    ID, IDSinhVien, IDMonHoc, IDGiangVien, 
+                                    IDSinhVien, IDMonHoc, IDGiangVien, IDNhomMonHoc,
                                     IDHocKy, IDNamHoc, DiemChuyenCan, DiemKiemTra,
                                     DiemThi, DiemTongKet, DiemChu, DiemHe4,
                                     KetQua, LanHoc, GhiChu, NgayNhap
                                 ) VALUES (
-                                    ?, ?, ?, ?, 
+                                    ?, ?, ?, ?,
                                     ?, ?, NULL, NULL, 
                                     NULL, NULL, NULL, NULL, 
                                     0, 1, 'Đăng ký lần đầu', NOW()
                                 )
                             ");
                             $stmtInsertBangDiem->execute([
-                                $bangDiemId,
                                 $tk['ID'],
                                 $monHoc['ID'],
                                 $idGiangVien,
+                                $nhomMonHocId,
                                 $hocKyNamHoc['IDHocKy'],
                                 $hocKyNamHoc['IDNamHoc']
                             ]);

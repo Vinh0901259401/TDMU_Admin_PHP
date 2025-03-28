@@ -1,4 +1,5 @@
 ﻿<?php
+// filepath: c:\xampp\htdocs\TDMU_website\Areas\Admin\Views\Class\DecreasePredict.php
 // Kết nối database
 require_once("../Shared/connect.inc");
 
@@ -50,7 +51,7 @@ function predictDecreaseScore($currentScore, $minDecrease = 0.25, $maxDecrease =
     }
     
     // Đảm bảo điểm không giảm dưới 2.0
-    return max(round($currentScore - $decrease, 2), 2.0);
+    return max(round($currentScore - $decrease, 1), 2.0);
 }
 
 // Lấy thông tin sinh viên và dự đoán điểm
@@ -81,13 +82,14 @@ if ($sinhVienID && $accessLevel >= 1 && $accessLevel <= 4) {
         
         // Lấy điểm các môn học của sinh viên trong học kỳ này
         $stmtDiem = $conn->prepare(
-            "SELECT bd.*, mh.Ten as TenMonHoc, mh.SoTC 
+            "SELECT bd.*, mh.TenMonHoc, mh.MaMonHoc, mh.SoTinChi as SoTC, nhm.MaNhom 
             FROM bangdiem bd
-            INNER JOIN monhoc mh ON bd.IDMonHoc = mh.ID
+            JOIN monhoc mh ON bd.IDMonHoc = mh.ID
+            LEFT JOIN nhommonhoc nhm ON bd.IDNhomMonHoc = nhm.ID
             WHERE bd.IDSinhVien = ?
-              AND mh.IDHocKy = ?
-              AND mh.IDNamHoc = ?
-            ORDER BY mh.Ten"
+              AND bd.IDHocKy = ?
+              AND bd.IDNamHoc = ?
+            ORDER BY mh.TenMonHoc"
         );
         $stmtDiem->execute([$sinhVienID, $maHK, $maNH]);
         
@@ -99,33 +101,59 @@ if ($sinhVienID && $accessLevel >= 1 && $accessLevel <= 4) {
         foreach ($diemHocKy as $diem) {
             $subject = new stdClass();
             $subject->Ten = $diem['TenMonHoc'];
+            $subject->MaMonHoc = $diem['MaMonHoc'] ?? '';
             $subject->SoTC = $diem['SoTC'];
+            $subject->MaNhom = $diem['MaNhom'] ?? 'KTCN.CQ.01'; 
             
             // Lấy điểm hiện tại
-            $subject->DGK = isset($diem['DiemGiuaKy']) ? $diem['DiemGiuaKy'] : null;
-            $subject->DCK = isset($diem['DiemCuoiKy']) ? $diem['DiemCuoiKy'] : null;
+            $subject->DiemChuyenCan = isset($diem['DiemChuyenCan']) ? $diem['DiemChuyenCan'] : null;
+            $subject->DiemKiemTra = isset($diem['DiemKiemTra']) ? $diem['DiemKiemTra'] : null;
+            $subject->DiemThi = isset($diem['DiemThi']) ? $diem['DiemThi'] : null;
             
             // Tính điểm tổng kết hiện tại
             if (isset($diem['DiemTongKet']) && $diem['DiemTongKet'] !== null) {
                 $subject->DTB_HienTai = $diem['DiemTongKet'];
-            } elseif ($subject->DGK !== null && $subject->DCK !== null) {
-                $subject->DTB_HienTai = ($subject->DGK + $subject->DCK) / 2;
+            } elseif ($subject->DiemChuyenCan !== null && $subject->DiemKiemTra !== null && $subject->DiemThi !== null) {
+                // Tính theo trọng số: 10% chuyên cần, 30% kiểm tra, 60% thi
+                $subject->DTB_HienTai = round(
+                    $subject->DiemChuyenCan * 0.1 + 
+                    $subject->DiemKiemTra * 0.3 + 
+                    $subject->DiemThi * 0.6,
+                    1
+                );
             } else {
-                $subject->DTB_HienTai = $subject->DGK ?? $subject->DCK ?? 5.0; // Giá trị mặc định nếu không có điểm
+                $subject->DTB_HienTai = null;
             }
             
-            // Dự đoán điểm giữa kỳ giảm
-            $subject->DGK_DuDoan = $subject->DGK !== null ? predictDecreaseScore($subject->DGK) : 5.5;
+            // Dự đoán điểm giảm
+            $subject->DCC_DuDoan = $subject->DiemChuyenCan !== null ? 
+                predictDecreaseScore($subject->DiemChuyenCan) : null;
+                
+            $subject->DKT_DuDoan = $subject->DiemKiemTra !== null ? 
+                predictDecreaseScore($subject->DiemKiemTra) : null;
+                
+            $subject->DThi_DuDoan = $subject->DiemThi !== null ? 
+                predictDecreaseScore($subject->DiemThi) : null;
             
-            // Dự đoán điểm cuối kỳ giảm
-            $subject->DCK_DuDoan = $subject->DCK !== null ? predictDecreaseScore($subject->DCK) : 5.0;
-            
-            // Điểm trung bình dự đoán
-            $subject->DTB = ($subject->DGK_DuDoan + $subject->DCK_DuDoan) / 2;
+            // Tính điểm trung bình dự đoán
+            if ($subject->DCC_DuDoan !== null && $subject->DKT_DuDoan !== null && $subject->DThi_DuDoan !== null) {
+                $subject->DTB = round(
+                    $subject->DCC_DuDoan * 0.1 + 
+                    $subject->DKT_DuDoan * 0.3 + 
+                    $subject->DThi_DuDoan * 0.6,
+                    1
+                );
+            } elseif ($subject->DTB_HienTai !== null) {
+                $subject->DTB = predictDecreaseScore($subject->DTB_HienTai);
+            } else {
+                $subject->DTB = null;
+            }
             
             // Tính tổng điểm và tổng tín chỉ
-            $tongTC += $subject->SoTC;
-            $tongDiem += $subject->DTB * $subject->SoTC;
+            if ($subject->DTB !== null) {
+                $tongTC += $subject->SoTC;
+                $tongDiem += $subject->DTB * $subject->SoTC;
+            }
             
             $subjects[] = $subject;
         }
@@ -134,27 +162,50 @@ if ($sinhVienID && $accessLevel >= 1 && $accessLevel <= 4) {
         if (empty($subjects)) {
             // Môn học mẫu theo học kỳ
             $monHocMau = [
-                'HK0000000001' => ['Toán cao cấp', 'Lập trình căn bản', 'Tiếng Anh chuyên ngành', 'Triết học'],
-                'HK0000000002' => ['Cơ sở dữ liệu', 'Lập trình hướng đối tượng', 'Mạng máy tính', 'Cấu trúc dữ liệu và giải thuật'],
-                'HK0000000003' => ['Phân tích thiết kế hệ thống', 'Lập trình web', 'Trí tuệ nhân tạo', 'Quản lý dự án phần mềm']
+                'HK0000000001' => [
+                    ['Toán cao cấp', 'MATH101', 'KTCN.CQ.01', 3],
+                    ['Lập trình căn bản', 'CS101', 'KTCN.CQ.01', 3],
+                    ['Tiếng Anh chuyên ngành', 'ENG101', 'KTCN.CQ.02', 2],
+                    ['Triết học', 'PHIL101', 'KTCN.CQ.01', 2]
+                ],
+                'HK0000000002' => [
+                    ['Cơ sở dữ liệu', 'CS105', 'KTCN.CQ.03', 3],
+                    ['Lập trình hướng đối tượng', 'CS102', 'KTCN.CQ.02', 3],
+                    ['Mạng máy tính', 'CS103', 'KTCN.CQ.01', 3], 
+                    ['Cấu trúc dữ liệu và giải thuật', 'CS104', 'KTCN.CQ.01', 3]
+                ]
             ];
             
             $monHocHienTai = $monHocMau[$maHK] ?? $monHocMau['HK0000000001'];
             
-            foreach ($monHocHienTai as $tenMonHoc) {
+            foreach ($monHocHienTai as $monHoc) {
                 $subject = new stdClass();
-                $subject->Ten = $tenMonHoc;
-                $subject->SoTC = 3;
+                $subject->Ten = $monHoc[0];
+                $subject->MaMonHoc = $monHoc[1];
+                $subject->MaNhom = $monHoc[2];
+                $subject->SoTC = $monHoc[3];
                 
-                $subject->DGK = rand(65, 85) / 10; // 6.5 - 8.5
-                $subject->DCK = rand(70, 90) / 10; // 7.0 - 9.0
+                $subject->DiemChuyenCan = rand(75, 95) / 10; // 7.5 - 9.5
+                $subject->DiemKiemTra = rand(65, 85) / 10; // 6.5 - 8.5
+                $subject->DiemThi = rand(60, 85) / 10; // 6.0 - 8.5
                 
-                $subject->DTB_HienTai = ($subject->DGK + $subject->DCK) / 2;
+                $subject->DTB_HienTai = round(
+                    $subject->DiemChuyenCan * 0.1 + 
+                    $subject->DiemKiemTra * 0.3 + 
+                    $subject->DiemThi * 0.6,
+                    1
+                );
                 
-                $subject->DGK_DuDoan = predictDecreaseScore($subject->DGK);
-                $subject->DCK_DuDoan = predictDecreaseScore($subject->DCK);
+                $subject->DCC_DuDoan = predictDecreaseScore($subject->DiemChuyenCan);
+                $subject->DKT_DuDoan = predictDecreaseScore($subject->DiemKiemTra);
+                $subject->DThi_DuDoan = predictDecreaseScore($subject->DiemThi);
                 
-                $subject->DTB = ($subject->DGK_DuDoan + $subject->DCK_DuDoan) / 2;
+                $subject->DTB = round(
+                    $subject->DCC_DuDoan * 0.1 + 
+                    $subject->DKT_DuDoan * 0.3 + 
+                    $subject->DThi_DuDoan * 0.6,
+                    1
+                );
                 
                 $tongTC += $subject->SoTC;
                 $tongDiem += $subject->DTB * $subject->SoTC;
@@ -261,55 +312,36 @@ ob_start();
                                         <table class="table table-bordered table-hover">
                                             <thead class="table-danger">
                                                 <tr>
-                                                    <th rowspan="2" class="text-center align-middle">Môn học</th>
-                                                    <th rowspan="2" class="text-center align-middle">Số TC</th>
-                                                    <th colspan="2" class="text-center">Điểm hiện tại</th>
-                                                    <th colspan="3" class="text-center bg-danger bg-opacity-10">Dự đoán điểm</th>
-                                                </tr>
-                                                <tr>
-                                                    <th class="text-center">Giữa kỳ</th>
-                                                    <th class="text-center">Cuối kỳ</th>
-                                                    <th class="text-center bg-danger bg-opacity-10">Giữa kỳ</th>
-                                                    <th class="text-center bg-danger bg-opacity-10">Cuối kỳ</th>
-                                                    <th class="text-center bg-danger bg-opacity-10">Tổng kết</th>
+                                                    <th class="text-center">STT</th>
+                                                    <th>Tên môn học</th>
+                                                    <th class="text-center">Mã MH</th>
+                                                    <th class="text-center">Nhóm</th>
+                                                    <th class="text-center">Số TC</th>
+                                                    <th class="text-center">Điểm hiện tại</th>
+                                                    <th class="text-center bg-danger bg-opacity-10">Dự đoán điểm</th>
+                                                    <th class="text-center">Chênh lệch</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                <?php foreach ($subjects as $subject): ?>
+                                                <?php $stt = 1; foreach ($subjects as $subject): ?>
                                                 <tr>
+                                                    <td class="text-center"><?php echo $stt++; ?></td>
                                                     <td><?php echo htmlspecialchars($subject->Ten); ?></td>
+                                                    <td class="text-center"><?php echo htmlspecialchars($subject->MaMonHoc); ?></td>
+                                                    <td class="text-center"><?php echo htmlspecialchars($subject->MaNhom); ?></td>
                                                     <td class="text-center"><?php echo $subject->SoTC; ?></td>
                                                     <td class="text-center">
-                                                        <?php echo $subject->DGK !== null ? number_format($subject->DGK, 2) : '-'; ?>
-                                                    </td>
-                                                    <td class="text-center">
-                                                        <?php echo $subject->DCK !== null ? number_format($subject->DCK, 2) : '-'; ?>
-                                                    </td>
-                                                    <td class="text-center text-danger fw-bold">
-                                                        <?php echo number_format($subject->DGK_DuDoan, 2); ?>
-                                                        <?php if ($subject->DGK !== null): ?>
-                                                            <small class="text-danger">
-                                                                <i class="fas fa-arrow-down"></i> 
-                                                                <?php echo number_format($subject->DGK - $subject->DGK_DuDoan, 2); ?>
-                                                            </small>
-                                                        <?php endif; ?>
-                                                    </td>
-                                                    <td class="text-center text-danger fw-bold">
-                                                        <?php echo number_format($subject->DCK_DuDoan, 2); ?>
-                                                        <?php if ($subject->DCK !== null): ?>
-                                                            <small class="text-danger">
-                                                                <i class="fas fa-arrow-down"></i> 
-                                                                <?php echo number_format($subject->DCK - $subject->DCK_DuDoan, 2); ?>
-                                                            </small>
-                                                        <?php endif; ?>
+                                                        <?php echo $subject->DTB_HienTai !== null ? number_format($subject->DTB_HienTai, 1) : '-'; ?>
                                                     </td>
                                                     <td class="text-center fw-bold bg-danger bg-opacity-10">
-                                                        <?php echo number_format($subject->DTB, 2); ?>
-                                                        <?php if (isset($subject->DTB_HienTai)): ?>
-                                                            <small class="text-danger">
-                                                                <i class="fas fa-arrow-down"></i> 
-                                                                <?php echo number_format($subject->DTB_HienTai - $subject->DTB, 2); ?>
-                                                            </small>
+                                                        <?php echo $subject->DTB !== null ? number_format($subject->DTB, 1) : '-'; ?>
+                                                    </td>
+                                                    <td class="text-center text-danger">
+                                                        <?php if ($subject->DTB_HienTai !== null && $subject->DTB !== null): ?>
+                                                            <i class="fas fa-arrow-down"></i> 
+                                                            <?php echo number_format($subject->DTB_HienTai - $subject->DTB, 1); ?>
+                                                        <?php else: ?>
+                                                            -
                                                         <?php endif; ?>
                                                     </td>
                                                 </tr>
@@ -317,24 +349,25 @@ ob_start();
                                             </tbody>
                                             <tfoot class="table-danger">
                                                 <tr>
-                                                    <th>Tổng kết:</th>
+                                                    <th colspan="4" class="text-end">Tổng kết:</th>
                                                     <th class="text-center"><?php echo $soTC; ?></th>
-                                                    <th colspan="2" class="text-center">Điểm trung bình hiện tại</th>
-                                                    <th colspan="2" class="text-center">Dự đoán điểm TB</th>
+                                                    <th class="text-center">Điểm TB hiện tại</th>
                                                     <th class="text-center fw-bold">
                                                         <?php echo number_format($dtk, 2); ?>
+                                                    </th>
+                                                    <th class="text-center">
                                                         <?php
-                                                        // Xác định màu và đánh giá
+                                                        // Xác định xếp loại
                                                         if ($dtk >= 8.5) {
-                                                            echo '<span class="badge bg-success ms-2">Xuất sắc</span>';
+                                                            echo '<span class="badge bg-success">Xuất sắc</span>';
                                                         } elseif ($dtk >= 7.0) {
-                                                            echo '<span class="badge bg-primary ms-2">Giỏi</span>';
+                                                            echo '<span class="badge bg-primary">Giỏi</span>';
                                                         } elseif ($dtk >= 5.5) {
-                                                            echo '<span class="badge bg-info ms-2">Khá</span>';
+                                                            echo '<span class="badge bg-info">Khá</span>';
                                                         } elseif ($dtk >= 4.0) {
-                                                            echo '<span class="badge bg-warning ms-2">Trung bình</span>';
+                                                            echo '<span class="badge bg-warning">Trung bình</span>';
                                                         } else {
-                                                            echo '<span class="badge bg-danger ms-2">Yếu</span>';
+                                                            echo '<span class="badge bg-danger">Yếu</span>';
                                                         }
                                                         ?>
                                                     </th>
@@ -376,25 +409,29 @@ ob_start();
                                         </div>
                                     </div>
                                     
-                                    <div class="alert alert-danger mt-4">
-                                        <h5><i class="fas fa-exclamation-circle me-2"></i> Nguy cơ cần lưu ý:</h5>
-                                        <ul class="mb-0">
-                                            <li>Thiếu tập trung trong quá trình học tập có thể dẫn tới điểm giảm</li>
-                                            <li>Áp lực từ nhiều môn học cùng lúc có thể ảnh hưởng đến hiệu suất học tập</li>
-                                            <li>Độ khó tăng dần của nội dung môn học có thể tác động đến kết quả</li>
-                                            <li>Thiếu thời gian ôn tập và làm bài tập thường xuyên</li>
-                                        </ul>
-                                    </div>
-                                    
-                                    <div class="alert alert-info mt-4">
-                                        <h5><i class="fas fa-lightbulb me-2"></i> Lời khuyên để tránh tình trạng này:</h5>
-                                        <ul class="mb-0">
-                                            <li>Lập kế hoạch học tập chi tiết, phân bổ đủ thời gian cho từng môn học</li>
-                                            <li>Tham dự đầy đủ các buổi học và chủ động đặt câu hỏi khi gặp khó khăn</li>
-                                            <li>Tham gia nhóm học tập để hỗ trợ nhau trong quá trình học</li>
-                                            <li>Thực hành làm bài tập thường xuyên để củng cố kiến thức</li>
-                                            <li>Tìm kiếm sự hỗ trợ từ giảng viên hoặc trợ giảng khi cần thiết</li>
-                                        </ul>
+                                    <div class="row mt-4">
+                                        <div class="col-md-6">
+                                            <div class="alert alert-danger">
+                                                <h5><i class="fas fa-exclamation-circle me-2"></i> Nguy cơ cần lưu ý:</h5>
+                                                <ul class="mb-0">
+                                                    <li>Thiếu tập trung trong quá trình học tập</li>
+                                                    <li>Áp lực từ nhiều môn học cùng lúc</li>
+                                                    <li>Độ khó tăng dần của nội dung môn học</li>
+                                                    <li>Thiếu thời gian ôn tập và làm bài tập</li>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="alert alert-info">
+                                                <h5><i class="fas fa-lightbulb me-2"></i> Lời khuyên:</h5>
+                                                <ul class="mb-0">
+                                                    <li>Lập kế hoạch học tập chi tiết</li>
+                                                    <li>Tham dự đầy đủ các buổi học</li>
+                                                    <li>Tham gia nhóm học tập để hỗ trợ nhau</li>
+                                                    <li>Tìm kiếm sự hỗ trợ từ giảng viên khi cần</li>
+                                                </ul>
+                                            </div>
+                                        </div>
                                     </div>
                                     
                                     <div class="d-flex justify-content-between mt-4">

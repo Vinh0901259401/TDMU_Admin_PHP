@@ -1,26 +1,33 @@
 ﻿<?php
-// filepath: c:\xampp\htdocs\TDMU_website\Areas\Admin\Views\Article\Index.php
-// Kết nối database
-require_once("../Shared/connect.inc");
+/**
+ * Trang Quản Lý Bài Viết
+ * Chức năng: Hiển thị danh sách, tìm kiếm, lọc, phân trang và các thao tác CRUD với bài viết
+ */
 
-// Tiêu đề trang
+
+// Kết nối database và các hàm tiện ích
+require_once("../Shared/connect.inc");
 $pageTitle = "Quản lý bài viết";
 
-// Hàm để cắt chuỗi giới hạn độ dài
+/**
+ * Hàm cắt chuỗi giới hạn độ dài
+ * @param string $string 
+ * @param int $length 
+ * @return string 
+ */
 function truncate($string, $length) {
     if (strlen($string) <= $length) {
         return $string;
-    } else {
-        return substr($string, 0, $length) . '...';
-    }   
+    }
+    return substr($string, 0, $length) . '...';
 }
 
-// Lấy thông tin người dùng từ session
+// Khởi tạo session và kiểm tra đăng nhập
 session_start();
 $accessLevel = 0;
 $tk = isset($_SESSION['TaiKhoan']) ? $_SESSION['TaiKhoan'] : null;
 
-// Kiểm tra quyền truy cập
+// Kiểm tra quyền truy cập người dùng (Cấp độ 1-4 mới được phép truy cập)
 if ($tk && isset($tk['IDQuyenTruyCap'])) {
     try {
         $stmt = $conn->prepare("SELECT CapDo FROM quyentruycap WHERE ID = ?");
@@ -35,13 +42,13 @@ if ($tk && isset($tk['IDQuyenTruyCap'])) {
     }
 }
 
-// Xử lý tham số tìm kiếm và lọc từ URL
+// Xử lý tham số tìm kiếm và lọc
 $maTheLoai = isset($_GET['MaTheLoai']) ? $_GET['MaTheLoai'] : '';
 $search = isset($_GET['strSearch']) ? trim($_GET['strSearch']) : '';
 
-// Xử lý phân trang
+// Cấu hình phân trang
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-$recordsPerPage = 10; // Số bài viết trên mỗi trang
+$recordsPerPage = 10; 
 $start = ($page - 1) * $recordsPerPage;
 
 // Lấy danh sách thể loại cho dropdown
@@ -53,11 +60,12 @@ try {
     error_log("Lỗi truy vấn danh sách thể loại: " . $e->getMessage());
 }
 
-// Truy vấn danh sách bài viết với điều kiện lọc
+// Truy vấn danh sách bài viết với điều kiện lọc và phân trang
 $dsBaiViet = [];
 $totalRecords = 0;
+
 try {
-    // Chuẩn bị câu truy vấn cơ sở và tham số
+    // Chuẩn bị điều kiện WHERE cho truy vấn
     $whereConditions = [];
     $params = [];
     
@@ -109,7 +117,7 @@ try {
     
     $stmt = $conn->prepare($query);
     
-    // Bind tất cả các tham số
+    // Bind tham số động
     $paramIndex = 1;
     foreach ($params as $param) {
         $stmt->bindValue($paramIndex++, $param);
@@ -127,11 +135,11 @@ try {
     $_SESSION['messageType'] = "danger";
 }
 
-// Bắt đầu output buffer
+// Bắt đầu output buffer để tích hợp với layout
 ob_start();
 ?>
 
-<!-- Phần nội dung trang -->
+<!-- Kiểm tra quyền truy cập và hiển thị thông báo nếu không đủ quyền -->
 <?php if ($accessLevel > 4 || $accessLevel < 1): ?>
     <div class="container-fluid px-4">
         <div class="row">
@@ -147,17 +155,19 @@ ob_start();
         </div>
     </div>
 <?php else: ?>
+    <!-- Hiển thị giao diện quản lý bài viết -->
     <div class="container-fluid px-4">
         <div class="row">
             <div class="col-12">
                 <div class="card shadow-sm my-4">
-                <div class="card-header bg-primary text-white py-3">
+                    <!-- Tiêu đề và nút thêm mới -->
+                    <div class="card-header bg-primary text-white py-3">
                         <div class="row align-items-center">
                             <div class="col-md-6">
-                                <h4 class="mb-0"><i class="fas fa-users-class me-2"></i>DANH SÁCH BÀI VIẾT</h4>
+                                <h4 class="mb-0"><i class="fas fa-newspaper me-2"></i>DANH SÁCH BÀI VIẾT</h4>
                             </div>
                             <div class="col-md-6 text-md-end mt-2 mt-md-0">
-                                <?php if ($accessLevel <= 2): ?>
+                                <?php if ($accessLevel <= 2): // Chỉ quản trị viên và biên tập viên được thêm mới ?>
                                     <a href="Create.php" class="btn btn-light">
                                         <i class="fas fa-plus-circle me-1"></i> Thêm bài viết mới
                                     </a>
@@ -167,7 +177,7 @@ ob_start();
                     </div>
                     
                     <div class="card-body">
-                        <!-- Thông báo -->
+                        <!-- Hiển thị thông báo -->
                         <?php if (isset($_SESSION['message'])): ?>
                             <div class="alert alert-<?php echo $_SESSION['messageType'] ?? 'info'; ?> alert-dismissible fade show" role="alert">
                                 <?php echo $_SESSION['message']; ?>
@@ -176,7 +186,7 @@ ob_start();
                             <?php unset($_SESSION['message'], $_SESSION['messageType']); ?>
                         <?php endif; ?>
                         
-                        <!-- Bộ lọc và tìm kiếm - đã xóa nút thêm mới -->
+                        <!-- Bộ lọc và tìm kiếm -->
                         <div class="row mb-4">
                             <div class="col-12">
                                 <form method="GET" action="" class="row g-3">
@@ -214,7 +224,7 @@ ob_start();
                             </div>
                         </div>
                         
-                        <!-- Bảng dữ liệu -->
+                        <!-- Bảng dữ liệu bài viết -->
                         <div class="table-responsive mt-3">
                             <table class="table table-bordered table-hover table-striped">
                                 <thead class="table-dark">
@@ -236,16 +246,21 @@ ob_start();
                                         <td><?php echo isset($baiViet['NgayTao']) && $baiViet['NgayTao'] ? date('d/m/Y', strtotime($baiViet['NgayTao'])) : ''; ?></td>
                                         <td class="text-center">
                                             <div class="btn-group">
+                                                <?php if ($accessLevel <= 2): // Chỉ quản trị viên và biên tập viên được sửa ?>
                                                 <a href="Edit.php?MaBV=<?php echo $baiViet['ID']; ?>" class="btn btn-warning btn-sm">
-                                                    <i class="fas fa-edit"></i> Sửa
+                                                    <i class="fas fa-edit"></i>
                                                 </a>
+                                                <?php endif; ?>
+                                                
                                                 <a href="Details.php?MaBV=<?php echo $baiViet['ID']; ?>" class="btn btn-primary btn-sm mx-1">
-                                                    <i class="fas fa-eye"></i> Chi tiết
+                                                    <i class="fas fa-eye"></i>
                                                 </a>
-                                                <a href="Delete.php?MaBV=<?php echo $baiViet['ID']; ?>" class="btn btn-danger btn-sm" 
-                                                   onclick="return confirm('Bạn có chắc muốn xóa bài viết này?');">
-                                                    <i class="fas fa-trash"></i> Xóa
+                                                
+                                                <?php if ($accessLevel <= 2): // Chỉ quản trị viên và biên tập viên được xóa ?>
+                                                <a href="Delete.php?MaBV=<?php echo $baiViet['ID']; ?>" class="btn btn-danger btn-sm">
+                                                    <i class="fas fa-trash"></i>
                                                 </a>
+                                                <?php endif; ?>
                                             </div>
                                         </td>
                                     </tr>
@@ -268,7 +283,7 @@ ob_start();
                             </table>
                         </div>
                         
-                        <!-- Phân trang -->
+                        <!-- Hiển thị phân trang -->
                         <?php if ($totalRecords > 0): ?>
                         <div class="d-flex justify-content-between align-items-center mt-4">
                             <div class="text-muted">
@@ -281,9 +296,10 @@ ob_start();
                             <nav aria-label="Page navigation">
                                 <ul class="pagination mb-0">
                                     <?php
+                                    // Tính toán phân trang
                                     $totalPages = ceil($totalRecords / $recordsPerPage);
                                     
-                                    // Xây dựng URL cơ bản cho phân trang, bao gồm tham số lọc và tìm kiếm
+                                    // Xây dựng URL cơ bản cho phân trang
                                     $basePageUrl = '?';
                                     if (!empty($maTheLoai)) {
                                         $basePageUrl .= 'MaTheLoai=' . urlencode($maTheLoai) . '&';
@@ -292,14 +308,14 @@ ob_start();
                                         $basePageUrl .= 'strSearch=' . urlencode($search) . '&';
                                     }
                                     
-                                    // Previous button
+                                    // Nút Previous
                                     if ($page > 1) {
                                         echo "<li class='page-item'><a class='page-link' href='{$basePageUrl}page=" . ($page - 1) . "'>«</a></li>";
                                     } else {
                                         echo "<li class='page-item disabled'><a class='page-link'>«</a></li>";
                                     }
                                     
-                                    // Page numbers
+                                    // Hiển thị số trang
                                     $startPage = max(1, $page - 2);
                                     $endPage = min($startPage + 4, $totalPages);
                                     
@@ -325,7 +341,7 @@ ob_start();
                                         echo "<li class='page-item'><a class='page-link' href='{$basePageUrl}page=" . $totalPages . "'>" . $totalPages . "</a></li>";
                                     }
                                     
-                                    // Next button
+                                    // Nút Next
                                     if ($page < $totalPages) {
                                         echo "<li class='page-item'><a class='page-link' href='{$basePageUrl}page=" . ($page + 1) . "'>»</a></li>";
                                     } else {
@@ -344,9 +360,10 @@ ob_start();
 <?php endif; ?>
 
 <?php
+
 // Lấy nội dung đã buffer và đưa vào layout
 $contentForLayout = ob_get_clean();
 
-// Kết nối với layout
+// Kết nối với layout admin
 include_once('../Shared/_LayoutAdmin.php');
 ?>

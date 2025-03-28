@@ -68,7 +68,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_delete']) && 
         // Xóa các bản ghi lịch sử chỉnh sửa
         $stmt = $conn->prepare("DELETE FROM baiviet_nguoichinhsua WHERE IDBaiViet = ?");
         $stmt->execute([$maBV]);
-        
+        // Xóa các bài viết người tham gia
+        $stmt = $conn->prepare("DELETE FROM baiviet_nguoithamgia WHERE IDBaiViet = ?");
+        $stmt->execute([$maBV]);
         // Xóa bài viết
         $stmt = $conn->prepare("DELETE FROM baiviet WHERE ID = ?");
         $stmt->execute([$maBV]);
